@@ -1,0 +1,26 @@
+# Claude Code local settings
+.claude/
+
+# Simulation outputs
+build/
+*.vcd
+*.vvp
+
+# Vivado outputs (reports/ is committed)
+vivado/
+.Xil/
+*.jou
+*.log
+
+# MATLAB
+matlab/*.asv
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# Private planning notes
+docs/CORDIC_Build_Guide.pdf

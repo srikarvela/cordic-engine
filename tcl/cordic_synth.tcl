@@ -13,8 +13,9 @@
 #
 # Outputs (committed)
 #   reports/N<N>_W<W>/utilization.rpt, timing_summary.rpt
-#   reports/ppa.csv     one row per configuration; scripts/ppa_table.py joins
-#                       it with docs/quantization_sweep.csv into docs/ppa_table.md
+#   reports/ppa.csv + docs/ppa_table.md are then built from those reports by
+#   scripts/ppa_table.py (report_utilization "Slice LUTs" etc.), so the console
+#   cell counts printed below are a progress indicator only.
 # =============================================================================
 
 set part       "xc7z020clg400-1" ;# Zynq-7020 / PYNQ-Z2, same part as the sibling repos
@@ -38,19 +39,6 @@ file mkdir $rdir
 
 proc count_cells {pattern} {
     return [llength [get_cells -quiet -hierarchical -filter "IS_PRIMITIVE && REF_NAME =~ $pattern"]]
-}
-
-# keep rows from earlier runs for other configurations
-set csv [file join $rdir ppa.csv]
-array set rows {}
-if {[file exists $csv]} {
-    set f [open $csv r]
-    gets $f
-    while {[gets $f line] >= 0} {
-        set c [split $line ,]
-        if {$line ne ""} { set rows([lindex $c 0],[lindex $c 1],[lindex $c 8]) $line }
-    }
-    close $f
 }
 
 foreach n $n_list {
@@ -83,14 +71,9 @@ foreach n $n_list {
     set cy   [count_cells CARRY4]
     set dsp  [count_cells DSP48*]
     set bram [count_cells RAMB*]
-    set rows($n,$W,$clk_period) "$n,$W,$lut,$srl,$ff,$cy,$dsp,$bram,$clk_period,$wns,$whs,$fmax"
-    puts "=== N_ITER=$n W=$W: LUT=$lut SRL=$srl FF=$ff CARRY4=$cy DSP=$dsp WNS=$wns Fmax=${fmax}MHz ==="
+    puts "=== N_ITER=$n W=$W: LUT cells=$lut SRL=$srl FF=$ff CARRY4=$cy DSP=$dsp WNS=$wns WHS=$whs Fmax=${fmax}MHz (primitive counts; Slice LUTs are in utilization.rpt) ==="
 
     close_project
 }
 
-set f [open $csv w]
-puts $f "N,W,LUT,SRL,FF,CARRY4,DSP,BRAM,period_ns,WNS_ns,WHS_ns,Fmax_MHz"
-foreach k [lsort -dictionary [array names rows]] { puts $f $rows($k) }
-close $f
-puts "=== Wrote $csv ==="
+puts "=== reports written under $rdir; run scripts/ppa_table.py to rebuild ppa.csv ==="

@@ -7,8 +7,8 @@ A multiplier-free, fully pipelined CORDIC in SystemVerilog: rotation mode (sin, 
 - **Bit-exact**: 15 610 golden vectors × 5 configurations match the MATLAB fixed-point model on every output bit, including ~1200 saturating vectors per configuration; a second, MATLAB-independent directed bench passes 46/46
 - **Multiplier-free, measured**: 0 DSP48s post-route in every configuration, including the 1/K gain compensation
 - **Operating point chosen by data**: N = 15, W = 17 is the cheapest of 169 modelled configurations meeting a 1e-4 worst-case error spec on sin, cos, magnitude and phase (13.6 effective bits)
-- **Timing closed at 250 MHz** on a −1 Zynq-7020 (+0.092 ns post-route) in 1568 LUTs / 1430 FFs — one result per clock, 250 Msamples/s; pushed against a 3 ns target the same design reaches 274 MHz
-- **The sweep shows where iterations stop paying**: 8 → 16 iterations buys 7.3 bits of accuracy for +46 % LUTs; 16 → 20 buys one more bit for another +20 %, because at W = 17 the word length, not N, has become the limit
+- **Setup-limited Fmax of 274 MHz** for the operating point on a −1 Zynq-7020, derived from post-route slack at a 3.000 ns constraint, in 1432 Slice LUTs / 1430 FFs (4.000 ns run) — one result per clock. At a 4.000 ns constraint setup is met (+0.092 ns) but **hold is not** (24 endpoints, −0.141 ns): this out-of-context flow does not close timing, see the synthesis section
+- **The sweep shows where iterations stop paying**: 8 → 16 iterations buys 7.3 bits of accuracy for +55 % Slice LUTs; 16 → 20 buys one more bit for another +21 %, because at W = 17 the word length, not N, has become the limit
 
 ---
 
@@ -43,7 +43,7 @@ The sibling [kalman-filter](https://github.com/srikarvela/kalman-filter) project
 | 2 | Quantization sweep N = 8…20 × W = 12…24, operating point, error plots | ✔ [docs/error_curves.png](docs/error_curves.png) |
 | 3 | RTL: stage, pipeline, pre-rotation, CSD gain scaler, top | ✔ |
 | 4 | Directed TB (independent of MATLAB) + full-range sweep TB, bit-exact | ✔ `make sim` |
-| 5 | Vivado OOC place & route swept over N_ITER, PPA table | ✔ reports in [reports/](reports) |
+| 5 | Vivado OOC place & route swept over N_ITER, PPA table (setup-limited Fmax; hold not closed in OOC) | ✔ reports in [reports/](reports) |
 
 Simulation: Icarus Verilog 12. Models: MATLAB R2026a, base product only (no Fixed-Point Designer — plain integer arithmetic with explicit rounding and saturation). Synthesis: Vivado 2024.1, xc7z020clg400-1.
 
@@ -124,28 +124,26 @@ Every synthesized configuration is also a verified one. A deliberately broken bu
 
 ## Synthesis results — area and Fmax versus accuracy
 
-Vivado 2024.1, xc7z020clg400-1 (PYNQ-Z2 part), out-of-context, **post-route**, 3.000 ns target. Fmax = 1 / (period − WNS). `make sweep` regenerates everything; raw reports are in [reports/](reports).
+Vivado 2024.1, xc7z020clg400-1 (PYNQ-Z2 part), out-of-context, **post-route**. Fmax = 1 / (period − WNS), i.e. the setup-limited clock derived from post-route slack at a 3.000 ns constraint. `make sweep` regenerates the reports and `scripts/ppa_table.py` builds this table and [reports/ppa.csv](reports/ppa.csv) directly from the committed `utilization.rpt` / `timing_summary.rpt` files in [reports/](reports) — no number here comes from anywhere else.
 
-| N_ITER | W | latency (cycles) | LUT | FF | CARRY4 | DSP | WNS @ period (ns) | Fmax (MHz) | max sin/cos error | effective bits | max phase error (rad) |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 8 | 17 | 14 | 1121 | 962 | 250 | 0 | -0.236 @ 3.000 | 309.0 | 7.76e-03 | 7.0 | 7.83e-03 |
-| 12 | 17 | 18 | 1364 | 1235 | 319 | 0 | -0.434 @ 3.000 | 291.2 | 4.75e-04 | 11.0 | 4.92e-04 |
-| 15 | 17 | 21 | 1568 | 1430 | 370 | 0 | -0.644 @ 3.000 | 274.4 | 7.78e-05 | 13.6 | 8.80e-05 |
-| 16 | 17 | 22 | 1635 | 1496 | 388 | 0 | -0.630 @ 3.000 | 275.5 | 4.98e-05 | 14.3 | 5.90e-05 |
-| 20 | 17 | 26 | 1969 | 1817 | 468 | 0 | -0.681 @ 3.000 | 271.7 | 2.46e-05 | 15.3 | 3.08e-05 |
-| 15 | 17 | 21 | 1568 | 1430 | 370 | 0 | +0.092 @ 4.000 | 255.9 | 7.78e-05 | 13.6 | 8.80e-05 |
+| N_ITER | W | latency (cycles) | Slice LUTs (logic + SRL) | FF | CARRY4 | DSP | period (ns) | WNS (ns) / failing | WHS (ns) / failing | Fmax (MHz) | max sin/cos error | effective bits | max phase error (rad) |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 8 | 17 | 14 | 974 (959 + 15) | 962 | 250 | 0 | 3.000 | -0.236 / 108 | -0.141 / 24 | 309.0 | 7.76e-03 | 7.0 | 7.83e-03 |
+| 12 | 17 | 18 | 1248 (1234 + 14) | 1235 | 319 | 0 | 3.000 | -0.434 / 167 | -0.141 / 7 | 291.2 | 4.75e-04 | 11.0 | 4.92e-04 |
+| 15 | 17 | 21 | 1445 (1431 + 14) | 1430 | 370 | 0 | 3.000 | -0.644 / 284 | -0.141 / 22 | 274.4 | 7.78e-05 | 13.6 | 8.80e-05 |
+| 16 | 17 | 22 | 1511 (1497 + 14) | 1496 | 388 | 0 | 3.000 | -0.630 / 322 | -0.202 / 17 | 275.5 | 4.98e-05 | 14.3 | 5.90e-05 |
+| 20 | 17 | 26 | 1835 (1821 + 14) | 1817 | 468 | 0 | 3.000 | -0.681 / 435 | -0.141 / 25 | 271.7 | 2.46e-05 | 15.3 | 3.08e-05 |
+| 15 | 17 | 21 | 1432 (1418 + 14) | 1430 | 370 | 0 | 4.000 | +0.092 / 0 | -0.141 / 24 | 255.9 | 7.78e-05 | 13.6 | 8.80e-05 |
 
-LUT includes 19 SRL-mapped LUTs (the valid/mode delay lines). Cell counts are primitive counts from the routed netlist; the full `report_utilization` output is alongside each timing report.
+**What the LUT column means.** "Slice LUTs" from `report_utilization`, i.e. every LUT the design occupies: the "LUT as Logic" count plus the "LUT as Memory" count (the 14–15 SRL-mapped LUTs holding the valid/mode delay lines), shown in brackets. For the operating point at 4.000 ns that is 1432 = 1418 + 14. The `LUT cells=` figure the Tcl script prints to the console during a run is a count of LUT *primitives* in the netlist, which is larger (two LUT5s packed into one slice LUT count twice) and is not used anywhere in this repository's tables.
 
 **Reading the table.**
 
-- **Area is linear in N**, about 70 LUTs and 71 FFs per added stage — three 22-bit add/sub units and their registers — on top of a fixed ~550 LUT cost for pre-rotation, the CSD scaler and the output stage.
+- **Area is linear in N**, about 72 Slice LUTs and 71 FFs per added stage — three 22-bit add/sub units and their registers — on top of a fixed ~400 LUT cost for pre-rotation, the CSD scaler and the output stage.
 - **Accuracy is not.** Each iteration buys one bit up to N ≈ 16; the last four iterations (16 → 20) buy one bit between them. This is the W = 17 noise floor from the MATLAB sweep showing up as wasted silicon: past N ≈ 17 the right move is a wider word, not more stages.
 - **Fmax is nearly flat** (272–309 MHz), as it should be for a feed-forward pipeline: the critical path is one stage's 22-bit carry chain regardless of how many stages there are. The slow drift down with N is G growing from 3 to 5 bits (wider adders) and routing congestion, not logic depth.
-- **Timing closure.** The 3.000 ns rows are deliberately over-constrained to measure Fmax and all have negative slack. The 4.000 ns row is the closure run: the operating point **meets 250 MHz with +0.092 ns** setup slack post-route.
-- **Two fixes came out of the first timing reports.** Round-and-saturate in one cycle was the critical path at 203 MHz (rounding carry chain into the clamp compare), and after splitting it the two-stage gain scaler was next at 285 MHz. With both re-pipelined (latency N+4 → N+6) the critical path is a CORDIC stage, which is the path the sweep is supposed to be measuring.
-- **Hold.** The reported WHS of −0.141 ns is on input-port → first-flop paths only (e.g. `z_i[7]` → `u_prerotate/z_o_reg`): an out-of-context artefact of a 0.3 ns input delay against an un-inserted clock network. Only the worst path is itemised in the report; the failing-endpoint count (22–24) is consistent with boundary paths alone, but that has not been enumerated endpoint by endpoint.
-
+- **Timing.** The 3.000 ns rows are deliberately over-constrained to measure Fmax and all fail setup. At a 4.000 ns constraint the operating point (N = 15, W = 17) meets setup with +0.092 ns worst slack and 0 failing endpoints. **Hold is not met in this out-of-context flow**: 24 endpoints fail at −0.141 ns worst slack (−1.265 ns total), and `report_timing_summary` states "Timing constraints are not met." The pattern is the same in every configuration (WHS −0.141 to −0.202 ns, 7–25 endpoints) and is attributable to the ideal-clock assumptions of OOC analysis — no global clock buffer or insertion delay in the clock path — with the worst path running from an input port into the first register (`z_i[6]` → `u_prerotate/z_o_reg[10]`). Hold closure needs a full implementation with a real clock network, and is **not claimed here**; the design has not closed timing.
+- **Two fixes came out of the first timing reports.** Round-and-saturate in one cycle was the setup-critical path (rounding carry chain into the clamp compare), and after splitting it the two-stage gain scaler was next. With both re-pipelined (latency N+4 → N+6) the setup-critical path is a CORDIC stage, which is the path the sweep is supposed to be measuring. (Those earlier runs' reports were overwritten and are not committed, so no figures are quoted for them.)
 
 ---
 
@@ -157,7 +155,7 @@ make sim           # directed + sweep testbenches for every exported config, the
 make sim-sweep N=12 W=17 WAVES=1
 make synth         # OOC synthesis + P&R at the chosen N_ITER                             (Vivado)
 make sweep         # N_ITER = 8,12,16,20 -> reports/ppa.csv -> docs/ppa_table.md
-./scripts/vivado_in_parallels.sh period:4.000 17 15    # 250 MHz closure run
+./scripts/vivado_in_parallels.sh period:4.000 17 15    # 4.000 ns constraint run (setup met, hold not)
 make vm-sweep      # same, driven from macOS into a Parallels Windows VM running Vivado
 ```
 
@@ -179,6 +177,7 @@ Golden vectors and the generated LUT header are committed, so `make sim` works w
 ## What IS NOT implemented
 
 - **Not run on hardware.** Every number is from Icarus Verilog or Vivado static timing; there is no board wrapper, AXI interface or pin constraints.
+- **Timing is not closed.** Hold fails in the out-of-context flow (24 endpoints, −0.141 ns worst slack at the operating point; every configuration shows the same pattern). Setup is met at 4.000 ns, and the Fmax column is a setup-limited figure derived from post-route slack — neither is a claim that the block closes timing as delivered.
 - **No back-pressure.** `valid` only; there is no `ready`. A consumer that can stall needs a FIFO or skid buffer behind it.
 - **Circular mode only.** No hyperbolic (sinh/cosh/ln/√) or linear (multiply/divide) coordinates.
 - **Uniform internal width.** Every stage carries W+1+G bits. Per-stage tapering (dropping angle bits as the residual shrinks in rotation mode) would save area and is not done.
